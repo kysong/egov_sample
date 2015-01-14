@@ -1,0 +1,1242 @@
+실습환경 구성
+ - lab205-dataaccess-mybatis-tutor 프로젝트 import
+ - maven repository 설정 및 dependency library 맞춤 
+ 	.egovframework.rte.psl.dataaccess Dependency Hierarchy 확인
+ 	/**************************************************************************************/
+ 	mybatis : 3.2.1 / mybatis-spring : 1.2.0
+ 	/**************************************************************************************/
+
+
+
+===================================================================
+Step 1. 기본 환경 설정 
+
+ 1) Hsqldb 초기화 스크립트 -- (확인)
+ 
+	. /lab205-dataaccess-mybatis/src/test/resources/META-INF/testdata/sample_schema_hsql.sql 를 확인한다.
+	현 실습 프로젝트에서는 편의상 매 테스트 케이스 재실행 시 관련 table 을 drop/create 하고 있음.
+	
+	
+ 2-1) DataSource 설정 (Memory DB 사용 시)
+ 
+ 	.이 실습예제는 스프링에서 제공하는 Memory DB를 사용한다.
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/spring/context-datasource.xml
+	/**************************************************************************************/
+	<!--  TODO [Step 1-2] DataSource 설정 (Memory DB 사용 시) --> 
+	
+	<jdbc:embedded-database id="dataSource" type="HSQL">
+		<jdbc:script location= "META-INF/testdata/sample_schema_hsql.sql"/>
+	</jdbc:embedded-database>
+	/**************************************************************************************/
+
+2-2) DataSource 설정 (DataSource 빈정의 시)  -- (확인)
+
+	.메모리DB를 사용하지 않는 경우에는 다음과 같이 dataSource를 설정할 수 있다.
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/spring/context-datasource.xml
+	/**************************************************************************************/
+	<!-- <bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+		<property name="driverClassName" value="${driver}" />
+		<property name="url" value="${dburl}" />
+		<property name="username" value="${username}" />
+		<property name="password" value="${password}" />
+	</bean> -->
+	/**************************************************************************************/
+	
+	.context:property-placeholder는 위와 같이 ${property} 값을 바인딩하기 위한 설정이다.
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/spring/context-common.xml
+	/**************************************************************************************/
+	<!-- <context:property-placeholder location="classpath:/META-INF/spring/jdbc.properties" /> -->
+	/**************************************************************************************/
+	
+	.property-placeholder가 참조하는 properties 파일을 정의한다.
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/spring/jdbc.properties
+	/**************************************************************************************/
+	driver=org.hsqldb.jdbcDriver
+	dburl=jdbc:hsqldb:mem:testdb
+	#dburl=jdbc:hsqldb:hsql://localhost/sampledb
+	username=sa
+	password=
+	/**************************************************************************************/
+	. cf.) 위에서 기본으로 memory DB 형식으로 자동 구동하도록 되어 있으나 dburl=jdbc:hsqldb:hsql://localhost/sampledb 과 같이 변경시에는 
+	  /lab205-dataaccess-mybatis-tutor/db 상에서 (외부 탐색기에서) runHsqlDB.cmd 를 실행하여 DB Server 를 구동하고 테스트해야한다.
+
+
+ 3) Transaction 설정
+
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/spring/context-transaction.xml
+	/**************************************************************************************/
+	<!-- TODO [Step 1-3] Transaction 설정 -->
+	
+	<bean id="txManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+	  <property name="dataSource" ref="dataSource"/>
+	</bean>
+	/**************************************************************************************/
+	.cf1.) 여기서는 transaction manager 만을 설정하였고, TestCase 내에서 전역 @Transactional 설정으로 트랜잭션을 일괄 지정하고 있으나 
+	보통 AOP 형식(tx:aop)의 트랜잭션 대상 지정으로 비즈니스 서비스의 메서드에 일괄 지정하는 경우가 많다. 
+	.cf2.) @Transactional Annotation 으로 대상 메서드에 개별로 따로 지정할 수도 있다.
+
+
+ 4) AOP 설정
+ 
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/spring/context-aspect.xml 를 작성한다.
+	/**************************************************************************************/
+	<!-- TODO [Step 1-4] AOP 설정 -->
+	
+	<aop:config>
+		<aop:pointcut id="serviceMethod"
+			expression="execution(* egovframework.lab..impl.*Impl.*(..))" />
+
+		<aop:aspect ref="exceptionTransfer">
+			<aop:after-throwing throwing="exception"
+				pointcut-ref="serviceMethod" method="transfer" />
+		</aop:aspect>
+	</aop:config>
+
+	<bean id="exceptionTransfer" class="egovframework.rte.fdl.cmmn.aspect.ExceptionTransfer">
+		<property name="exceptionHandlerService">
+			<list>
+				<ref bean="defaultExceptionHandleManager" />
+			</list>
+		</property>
+	</bean>
+	/**************************************************************************************/
+	. Spring AOP(xml 설정 방식) 를 사용하여 비지니스 메서드에서 exception 이 발생한 경우 
+	일괄적으로 ExceptionTransfer 의 transfer 메서드 기능(Advice) 를 수행해 주게 됨. -
+	-> Exception logging 및 BizException 형태로 wrapping 하여 재처리하는 Exception 공통처리 후 
+	ExceptionHandleManager 에 의해 관리(설정) 되는 Handler (ex. exception 내용을 메일링 한더던지.. 사용자 구현 가능) 가 자동적으로 추가 수행될 수 있음.
+
+
+ 5) IDGeneration Service 설정
+ 
+ 	.EgovSequenceIdGnrService을 이용하여 비즈니스 로직에서 필요한 primary key를 생성한다. 
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/spring/context-idgen.xml
+	/**************************************************************************************/
+	<!-- TODO [Step 1-5] IDGeneration Service 설정 -->
+	
+	<bean name="primaryTypeSequenceIds"
+		class="egovframework.rte.fdl.idgnr.impl.EgovSequenceIdGnrService"
+		destroy-method="destroy">
+		<property name="dataSource" ref="dataSource" />
+		<property name="query" value="SELECT NEXT VALUE FOR empseq FROM DUAL" />
+	</bean>
+	/**************************************************************************************/
+	. 여기서는 Hsqldb 를 사용하여 Oracle 의 DUAL 테이블 역할을 할 수 있도록 초기화 스크립트 sql 에 create 하였으며, 
+	DB Sequence 기반의 Id Generation 을 사용한 예이다. (위에서 select next value for seq_id from xx 는 Hsqldb 의 특화된 sequence 사용 문법임에 유의!)
+
+
+ 6) context:component-scan 설정
+ 
+ 	.스테레오 타입 Annotation 을 인식하여 Spring bean 으로 자동 등록하기 위한 component-scan를 설정한다.
+ 	. /lab205-dataaccess/src/test/resources/META-INF/spring/context-common.xml
+	/**************************************************************************************/
+	<!-- TODO [Step 1-6] context:component-sacn 설정 -->
+	
+ 	<context:component-scan base-package="egovframework"/>
+ 	/**************************************************************************************/
+ 	
+ 	
+ 7) 공통 설정 -- (확인)
+ 
+ 	.나머지 아래 설정들을 확인한다.
+	. /lab205-dataaccess/src/test/resources/META-INF/spring/context-common.xml
+	/**************************************************************************************/
+		<!-- PropertyPlaceholderConfigurer 설정 -->
+		..
+		<!-- MessageSource 설정 -->
+		..
+		<!-- 전자정부 TraceHandler 설정 관련 -->
+		..
+	/**************************************************************************************/
+	. 외부 properties 파일을 Container 구동 시 미리 Spring Bean 설정 파일의 속성값으로 대체하여 처리해주는 PropertyPlaceholderConfigurer 설정
+	. Locale 에 따른 다국어 처리를 쉽게 해주는 messageSource 설정. 여기서는 전자정부 실행환경의 id generation 서비스와 properties 서비스의 메시지 파일과 업무 어플리케이션을 위한 사용자 메시지(/message/message-common - message-common_en_US.properties, message-common_ko_KR.properties 를 확인할 것) 를 지정하였다.
+	. exception 처리 Handler 와 유사하게 특정한 상황에서 사용자가 Trace Handler 를 지정하여 사용할 수 있도록 전자정부 프레임워크에서 가이드하고 있는 TraceHandler 설정
+
+ 
+===================================================================
+ Step 2. MyBatis 활용을 위한 환경 설정 
+
+ 1-1) MyBaits와 Spring 연동 설정
+ 
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/spring/context-mapper.xml
+	/**************************************************************************************/
+	<!-- SqlSession setup for MyBatis Database Layer -->
+	<!-- TODO [Step 2-1-1] MyBaits와 Spring 연동 설정 -->
+	
+	<bean id="sqlSession" class="org.mybatis.spring.SqlSessionFactoryBean">
+	    <property name="dataSource" ref="dataSource" />	    
+		<property name="configLocation" value="classpath:/META-INF/sqlmap/sql-mapper-config.xml" />
+		<!-- <property name="mapperLocations" value="classpath:**/lab-*.xml" /> -->
+	</bean>
+	/**************************************************************************************/
+	. sql-mapper-config.xml 내에서 개별적인 Mapper XML 파일을 수동으로 설정할 수 있지만, 
+	SqlSessionFactoryBean 정의 시에 mapperLocations 속성을 사용하면 Spring 의 ResourceLoader 형식으로 패턴 매칭에 의거한 일괄 처리된다.
+
+
+ 1-2) MyBatis의 Mapper Interface 자동스캔 설정
+	.표준프레임워크 기반에서 Mapper Interface 방식으로 개발 시에 @Mapper 어노테이션을 자동스캔하기 위해 필요하다.
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/sqlmap/sql-mapper-config.xml
+	/**************************************************************************************/
+	<!-- MapperConfigurer setup for @Mapper -->
+	<!-- TODO [Step 2-1-2] MyBatis의 Mapper Interface 자동스캔 설정 -->
+	
+	<bean class="egovframework.rte.psl.dataaccess.mapper.MapperConfigurer">
+		<property name="basePackage" value="egovframework.lab.dataaccess.service.impl" />
+	</bean>	
+	/**************************************************************************************/
+
+
+2) MyBatis Configuration File 작성
+	. /lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/sqlmap/sql-mapper-config.xml
+	/**************************************************************************************/
+	<?xml version="1.0" encoding="UTF-8"?>
+	<!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN" "http://mybatis.org/dtd/mybatis-3-config.dtd">
+	  
+	<!-- TODO [Step 2-2] MyBatis Configuration File 작성  -->
+	
+	
+	<configuration>
+			
+		<typeAliases>
+		    <typeAlias alias="deptVO" type="egovframework.lab.dataaccess.service.DeptVO" />
+		    <typeAlias alias="empVO" type="egovframework.lab.dataaccess.service.EmpVO" />
+		    
+			<typeAlias alias="empWithDeptVO" type="egovframework.lab.dataaccess.service.EmpWithDeptVO" />
+			<typeAlias alias="empIncludesDept" type="egovframework.lab.dataaccess.service.EmpIncludesDept" />
+			<typeAlias alias="deptIncludesEmpList" type="egovframework.lab.dataaccess.service.DeptIncludesEmpList" />
+		</typeAliases>
+		
+		<!-- MyBatis 연동을 위한 SqlSessionFactoryBean 정의 시 mapperLocations 속성으로 
+				한 번에 모든 Mapper XML File을 설정할 수 있다.  
+				(<property name="mapperLocations" value="classpath:**/lab-*.xml" /> 추가)
+				단, 아래 <mappers> 설정과 mapperLocations 설정 중 한가지만 선택해야한다.
+		-->
+		<mappers>
+			<mapper resource="META-INF/sqlmap/mappers/lab-dept.xml" />
+			<mapper resource="META-INF/sqlmap/mappers/lab-emp.xml" />
+			<mapper resource="META-INF/sqlmap/mappers/lab-emp-cache.xml" />
+		</mappers>
+	
+	</configuration>
+	/**************************************************************************************/
+
+
+3-1)  MyBatis Mapper XML File 작성_lab-emp.xml 
+	.EgovAbstractMapper 상속한 DAO 클래스 사용 시 MyBatis SQL statement, Dynamic SQL <if>를 테스트하고 있음
+	./lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/sqlmap/mappers/lab-emp.xml
+	/**************************************************************************************/
+	<?xml version="1.0" encoding="UTF-8"?>
+	<!DOCTYPE mapper   PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+	
+	<!-- TODO [Step 2-3-1] lab-emp.xml 작성 (EgovAbstractMapper 상속한 DAO 테스트)-->
+	
+	
+	<mapper namespace="Emp">
+	
+		<resultMap id="empResult" type="empVO">
+			<id property="empNo" column="EMP_NO" />
+			<result property="empName" column="EMP_NAME" />
+			<result property="job" column="JOB" />
+			<result property="mgr" column="MGR" />
+			<result property="hireDate" column="HIRE_DATE" />
+			<result property="sal" column="SAL" />
+			<result property="comm" column="COMM" />
+			<result property="deptNo" column="DEPT_NO" />
+		</resultMap>
+	
+		<insert id="insertEmp" parameterType="empVO">
+			<![CDATA[
+				insert into EMP (EMP_NO, EMP_NAME, JOB, MGR, HIRE_DATE, SAL, COMM, DEPT_NO)
+				values	(#{empNo}, #{empName}, #{job}, #{mgr}, #{hireDate}, #{sal}, #{comm}, #{deptNo})
+			]]>
+		</insert>
+	
+		<update id="updateEmp" parameterType="empVO">
+			<![CDATA[
+				update	EMP
+				set			EMP_NAME = #{empName},
+								JOB = #{job},
+								MGR = #{mgr},
+								HIRE_DATE = #{hireDate},
+								SAL = #{sal},
+								COMM = #{comm},
+								DEPT_NO = #{deptNo}
+				where		EMP_NO = #{empNo}
+			]]>
+		</update>
+	
+		<delete id="deleteEmp" parameterType="empVO">
+			<![CDATA[
+				delete from EMP
+				where EMP_NO = #{empNo}
+			]]>
+		</delete>
+		
+		<select id="selectEmp" parameterType="empVO" resultMap="empResult">
+			<![CDATA[
+				select	EMP_NO, EMP_NAME, JOB, MGR, HIRE_DATE, SAL, COMM, DEPT_NO
+				from	EMP
+				where	EMP_NO = #{empNo}
+			]]>
+		</select>
+	
+		<select id="selectEmpList" parameterType="empVO" resultMap="empResult">
+			<![CDATA[
+				select	EMP_NO, EMP_NAME, JOB, MGR, HIRE_DATE, SAL, COMM, DEPT_NO
+				from	EMP	
+				where 1 = 1
+			]]>
+		    <if test="empNo != null">
+		        AND EMP_NO = #{empNo}
+		    </if>
+		    <if test="empName != null">
+		        AND EMP_NAME LIKE '%' || #{empName} || '%'
+		    </if>
+		</select>
+
+	/**************************************************************************************/
+
+
+ 3-2) lab-dept.xml 작성 (Mapper Interface 테스트)
+ 
+ 	.Mapper Interface로 작성 시 MyBatis SQL statement, Dynamic SQL <if>를 테스트하고 있음
+	./lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/sqlmap/mappers/lab-dept.xml
+ 	/**************************************************************************************/
+	<?xml version="1.0" encoding="UTF-8"?>
+	<!DOCTYPE mapper   PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+	
+	<!-- TODO [Step 2-3-2] lab-dept.xml 작성 (Mapper Interface 테스트) -->
+	
+	
+	<mapper namespace="egovframework.lab.dataaccess.service.impl.DeptMapper">
+	
+		<resultMap id="deptResult" type="deptVO">
+			<id property="deptNo" column="DEPT_NO" />
+			<result property="deptName" column="DEPT_NAME" />
+			<result property="loc" column="LOC" />
+		</resultMap>
+	 
+		<insert id="insertDept" parameterType="deptVO">
+			<![CDATA[
+				insert into DEPT (DEPT_NO, DEPT_NAME, LOC)
+				values (#{deptNo}, #{deptName}, #{loc})
+			]]>
+		</insert>
+	 
+		<select id="selectDept" parameterType="deptVO" resultMap="deptResult">
+			<![CDATA[
+				select 	DEPT_NO, DEPT_NAME, LOC
+				from	DEPT
+				where	DEPT_NO = #{deptNo}
+			]]>
+		</select>
+	 
+		<update id="updateDept" parameterType="deptVO">
+		    <![CDATA[
+				update 	DEPT
+				set			DEPT_NAME = #{deptName}, LOC = #{loc}
+				where		DEPT_NO = #{deptNo}
+			]]>
+		</update>
+	 
+		<delete id="deleteDept" parameterType="deptVO">
+			<![CDATA[
+				delete from DEPT
+				where	DEPT_NO = #{deptNo}
+			]]>
+		</delete>
+	 
+		<select id="selectDeptList" parameterType="deptVO" resultMap="deptResult">
+			<![CDATA[
+				select	DEPT_NO, DEPT_NAME, LOC
+				from	DEPT
+				where  1 = 1
+			]]>
+		    <if test="deptNo != null">
+				AND DEPT_NO = #{deptNo}
+		    </if>
+		    <if test="deptName != null">
+				AND DEPT_NAME LIKE '%' || #{deptName} || '%'
+		    </if>
+		</select>
+		
+	/**************************************************************************************/
+
+
+ 3-3)   lab-emp-cache.xml 작성 -- (확인)
+
+	.MyBatis Cache 사용 테스트를 위한 Mapper XML
+	./lab205-dataaccess-mybatis-tutor/src/test/resources/META-INF/sqlmap/mappers/lab-dept.xml
+	/**************************************************************************************/
+	<?xml version="1.0" encoding="UTF-8"?>
+	<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+	
+	<!-- TODO [Step 2-3-3] lab-emp-cache.xml 작성 확인 (<cache> 테스트)-->
+	<mapper namespace="EmpCache">
+	
+	    <!-- select문 결과를 캐싱하고 insert/update/delete문 호출시 cache를 flush함 -->
+		<cache />
+		
+		<select id="selectEmpUsingCache" parameterType="empVO" resultMap="Emp.empResult">
+			<include refid="selectEmpReuse" />
+		</select>
+		
+		<!-- sql reuse test -->
+		<sql id="selectEmpReuse">
+			select EMP_NO, EMP_NAME, JOB, MGR, HIRE_DATE, SAL, COMM, DEPT_NO
+			from EMP
+			<include refid="empWhereEmpNo" />
+		</sql>
+	
+		<sql id="empWhereEmpNo">
+			<where>
+				<if test="empNo != null">
+					EMP_NO = #{empNo}
+				</if>
+			</where>
+		</sql>
+	
+	</mapper>
+	/**************************************************************************************/
+
+
+
+===================================================================
+ Step 3. MyBatis 활용을 위한 자바클래스 작성
+ 
+ 1-1) EmpVO 작성
+ 
+	. /lab205-dataaccess-mybatis-tutor/src/main/java/egovframework/lab/dataaccess/service/EmpVO.java
+	/**************************************************************************************/
+	public class EmpVO extends SearchVO {
+	
+		// TODO [Step 3-1-1] EmpVO 작성
+	
+	    private static final long serialVersionUID = -8049578957221741495L;
+	
+	    private BigDecimal empNo;
+	
+	    private String empName;
+	
+	    private String job;
+	
+	    private BigDecimal mgr;
+	
+	    private Date hireDate;
+	
+	    private BigDecimal sal;
+	
+	    private BigDecimal comm;
+	
+	    private BigDecimal deptNo;
+	
+	    public BigDecimal getEmpNo() {
+	        return empNo;
+	    }
+	
+	    public void setEmpNo(BigDecimal empNo) {
+	        this.empNo = empNo;
+	    }
+	
+	    public String getEmpName() {
+	        return empName;
+	    }
+	
+	    public void setEmpName(String empName) {
+	        this.empName = empName;
+	    }
+	
+	    public String getJob() {
+	        return job;
+	    }
+	
+	    public void setJob(String job) {
+	        this.job = job;
+	    }
+	
+	    public BigDecimal getMgr() {
+	        return mgr;
+	    }
+	
+	    public void setMgr(BigDecimal mgr) {
+	        this.mgr = mgr;
+	    }
+	
+	    public Date getHireDate() {
+	        return hireDate;
+	    }
+	
+	    public void setHireDate(Date hireDate) {
+	        this.hireDate = hireDate;
+	    }
+	
+	    public BigDecimal getSal() {
+	        return sal;
+	    }
+	
+	    public void setSal(BigDecimal sal) {
+	        this.sal = sal;
+	    }
+	
+	    public BigDecimal getComm() {
+	        return comm;
+	    }
+	
+	    public void setComm(BigDecimal comm) {
+	        this.comm = comm;
+	    }
+	
+	    public BigDecimal getDeptNo() {
+	        return deptNo;
+	    }
+	
+	    public void setDeptNo(BigDecimal deptNo) {
+	        this.deptNo = deptNo;
+	    }
+	/**************************************************************************************/
+
+
+1-2) EmpService Interface 작성
+
+	. /lab205-dataaccess-mybatis-tutor/src/main/java/egovframework/lab/dataaccess/service/EmpService.java
+	/**************************************************************************************/
+	public interface EmpService {
+		
+		// TODO [Step 3-1-2] EmpService 작성
+	
+	    public BigDecimal insertEmp(EmpVO empVO) throws Exception;
+	
+	    public void updateEmp(EmpVO empVO) throws Exception;
+	
+	    public void deleteEmp(EmpVO empVO) throws Exception;
+	
+	    public EmpVO selectEmp(EmpVO empVO) throws Exception;
+	    
+	    public List<EmpVO> selectEmpList(EmpVO searchVO) throws Exception;
+	    
+	    public EmpWithDeptVO selectEmpWithDept(EmpVO empVO) throws Exception;
+	    
+	    public EmpIncludesDept selectEmpIncludesDept(EmpVO empVO) throws Exception;
+	    
+	    public EmpVO selectEmpUsingCache(EmpVO empVO) throws Exception;
+	/**************************************************************************************/
+
+
+1-3) Annotation을 적용한 EmpServiceImpl 작성
+
+	. /lab205-dataaccess-mybatis-tutor/src/main/java/egovframework/lab/dataaccess/service/impl/EmpServiceImpl.java
+	/**************************************************************************************/
+	@Service("empService")
+	public class EmpServiceImpl extends EgovAbstractServiceImpl implements EmpService {
+		
+		// TODO [Step 3-1-3] EmpServiceImpl 작성
+	
+	    @Resource(name = "primaryTypeSequenceIds")
+	    EgovIdGnrService egovIdGnrService; // primaryTypeSequenceIds 는 Sequence 기반으로 key 생성
+	
+	    @Resource(name = "empMapper")
+	    private EmpMapper empMapper;
+	
+	    // insert Emp
+	    public BigDecimal insertEmp(EmpVO empVO) throws Exception {
+	    	
+	        // IDGeneration Service 를 사용하여 key 생성    	
+	        BigDecimal generatedEmpNo = egovIdGnrService.getNextBigDecimalId();
+	        egovLogger.debug("EmpServiceImpl.insertEmp - generated empNo : " + generatedEmpNo);
+	
+	        empVO.setEmpNo(generatedEmpNo);
+	
+	        empMapper.insertEmp(empVO);
+	
+	        return generatedEmpNo;
+	    }
+	
+	    // update Emp
+	    public void updateEmp(EmpVO empVO) throws Exception {
+	        empMapper.updateEmp(empVO);
+	    }
+	
+	    // delete Emp
+	    public void deleteEmp(EmpVO empVO) throws Exception {
+	        empMapper.deleteEmp(empVO);
+	    }
+	
+	    // select Emp
+	    public EmpVO selectEmp(EmpVO empVO) throws Exception {
+	        EmpVO resultVO;
+	        resultVO = empMapper.selectEmp(empVO);
+	
+	        if (resultVO == null) {
+	            throw processException("info.nodata.msg");
+	        }
+	
+	        return resultVO;
+	    }
+	
+	    // list Emp
+	    public List<EmpVO> selectEmpList(EmpVO searchVO) throws Exception {
+	        return empMapper.selectEmpList(searchVO);
+	    }
+	
+	    // select Emp + deptNo, deptName, loc
+	    public EmpWithDeptVO selectEmpWithDept(EmpVO empVO) throws Exception {
+	        EmpWithDeptVO resultVO;
+	        resultVO = empMapper.selectEmpWithDept(empVO);
+	
+	        if (resultVO == null) {
+	            throw processException("info.nodata.msg");
+	        }
+	
+	        return resultVO;
+	    }
+	    
+	    // select Emp + Dept
+	    public EmpIncludesDept selectEmpIncludesDept(EmpVO empVO) throws Exception {
+	        EmpIncludesDept resultVO;
+	        resultVO = empMapper.selectEmpIncludesDept(empVO);
+	
+	        if (resultVO == null) {
+	            throw processException("info.nodata.msg");
+	        }
+	
+	        return resultVO;
+	    }
+	
+	    // select using cache
+	    public EmpVO selectEmpUsingCache(EmpVO empVO) throws Exception {
+	
+	        EmpVO resultVO;
+	        resultVO = empMapper.selectEmpUsingCache(empVO);
+	
+	        if (resultVO == null) {
+	            throw processException("info.nodata.msg");
+	        }
+	
+	        return resultVO;
+	    }
+	/**************************************************************************************/
+	
+	
+1-4) EgovAbstractMapper를 상속한 EmpMapper DAO클래스 작성
+ 
+	. /lab205-dataaccess-mybatis-tutor/src/main/java/egovframework/lab/dataaccess/service/impl/EmpMapper.java
+	/**************************************************************************************/	
+	@Repository("empMapper")
+	public class EmpMapper extends EgovAbstractMapper {
+		
+		// TODO [Step 3-1-4] EmpMapper 작성
+	
+	    public void insertEmp(EmpVO vo) {
+	        insert("Emp.insertEmp", vo);
+	    }
+	
+	    public int updateEmp(EmpVO vo) {
+	        return update("Emp.updateEmp", vo);
+	    }
+	
+	    public int deleteEmp(EmpVO vo) {
+	        return delete("Emp.deleteEmp", vo);
+	    }
+	
+	    public EmpVO selectEmp(EmpVO vo) {
+	        return (EmpVO) selectByPk("Emp.selectEmp", vo);
+	    }
+	
+	    @SuppressWarnings("unchecked")
+	    public List<EmpVO> selectEmpList(EmpVO searchVO) {
+	        return (List<EmpVO>)list("Emp.selectEmpList", searchVO);
+	    }
+	
+	    public EmpWithDeptVO selectEmpWithDept(EmpVO vo) {
+	        return (EmpWithDeptVO) selectByPk("Emp.selectEmpWithDept", vo);
+	    }
+	
+	    public EmpIncludesDept selectEmpIncludesDept(EmpVO vo) {
+	        return (EmpIncludesDept) selectByPk("Emp.selectEmpIncludesDept", vo);
+	    }
+	
+	    public EmpVO selectEmpUsingCache(EmpVO vo) {
+	    	return (EmpVO) selectByPk("EmpCache.selectEmpUsingCache", vo);
+	    }
+	/**************************************************************************************/
+
+2-1) DeptVO 작성
+
+	. /lab205-dataaccess-mybatis-tutor/src/main/java/egovframework/lab/dataaccess/service/DeptVO.java
+	/**************************************************************************************/
+		public class DeptVO extends SearchVO {
+		
+			// TODO [Step 3-2-1] DeptVO 작성
+			
+		    private static final long serialVersionUID = -5658611204548724246L;
+		
+		    private BigDecimal deptNo;
+		
+		    private String deptName;
+		
+		    private String loc;
+		
+		    public BigDecimal getDeptNo() {
+		        return deptNo;
+		    }
+		
+		    public void setDeptNo(BigDecimal deptNo) {
+		        this.deptNo = deptNo;
+		    }
+		
+		    public String getDeptName() {
+		        return deptName;
+		    }
+		
+		    public void setDeptName(String deptName) {
+		        this.deptName = deptName;
+		    }
+		
+		    public String getLoc() {
+		        return loc;
+		    }
+		
+		    public void setLoc(String loc) {
+		        this.loc = loc;
+		    }
+	/**************************************************************************************/
+	
+	
+2-2) DeptService Interface 작성
+
+	. /lab205-dataaccess-mybatis-tutor/src/main/java/egovframework/lab/dataaccess/service/DeptService.java
+	/**************************************************************************************/
+	public interface DeptService {
+	
+		// TODO [Step 3-2-2] DeptService 작성
+		
+	    public void insertDept(DeptVO deptVO) throws Exception;
+	
+	    public void updateDept(DeptVO deptVO) throws Exception;
+	
+	    public void deleteDept(DeptVO deptVO) throws Exception;
+	
+	    public DeptVO selectDept(DeptVO deptVO) throws Exception;
+	    
+	    public List<DeptVO> selectDeptList(DeptVO searchVO) throws Exception;
+	
+	    public DeptIncludesEmpList selectDeptIncludesEmpList(DeptVO deptVO) throws Exception;
+	/**************************************************************************************/
+	
+	
+2-3) Annotation을 적용한 DeptServiceImpl 작성
+
+	. /lab205-dataaccess-mybatis-tutor/src/main/java/egovframework/lab/dataaccess/service/impl/DeptServiceImpl.java
+	/**************************************************************************************/
+	@Service("deptService")
+	public class DeptServiceImpl extends EgovAbstractServiceImpl implements DeptService {
+	
+		// TODO [Step 3-2-3] DeptServiceImpl 작성
+		
+	    @Resource(name = "deptMapper")
+	    private DeptMapper deptMapper;
+	
+	    // insert Dept
+	    public void insertDept(DeptVO deptVO) throws Exception {
+	        deptMapper.insertDept(deptVO);
+	    }
+	
+	    // update Dept
+	    public void updateDept(DeptVO deptVO) throws Exception {
+	        deptMapper.updateDept(deptVO);
+	    }
+	
+	    // delete Dept
+	    public void deleteDept(DeptVO deptVO) throws Exception {
+	        deptMapper.deleteDept(deptVO);
+	    }
+	
+	    // select Dept
+	    public DeptVO selectDept(DeptVO deptVO) throws Exception {
+	
+	        DeptVO resultVO = deptMapper.selectDept(deptVO);
+	
+	        if (resultVO == null) {
+	            throw processException("info.nodata.msg");
+	        }
+	
+	        return resultVO;
+	    }
+	
+	    // list Dept
+	    public List<DeptVO> selectDeptList(DeptVO searchVO) throws Exception {
+	        return deptMapper.selectDeptList(searchVO);
+	    }
+	
+	    // select Dept + EmpList
+	    public DeptIncludesEmpList selectDeptIncludesEmpList(DeptVO deptVO)
+	            throws Exception {
+	        DeptIncludesEmpList resultVO = deptMapper.selectDeptIncludesEmpList(deptVO);
+	
+	        if (resultVO == null) {
+	            throw processException("info.nodata.msg");
+	        }
+	
+	        return resultVO;
+	    }
+	/**************************************************************************************/
+		
+		
+2-4) EgovAbstractMapper를 상속한 EmpMapper DAO클래스 작성 
+
+	. /lab205-dataaccess-mybatis-tutor/src/main/java/egovframework/lab/dataaccess/service/impl/DeptMapper.java
+	/**************************************************************************************/
+	@Mapper("deptMapper")
+	public interface DeptMapper {
+	 
+		// TODO [Step 3-2-4] DeptMapper 작성 (Mapper Interface) 
+		
+	    public void insertDept(DeptVO vo);
+	 
+	    public int updateDept(DeptVO vo);
+	 
+	    public int deleteDept(DeptVO vo);
+	 
+	    public DeptVO selectDept(DeptVO vo);
+	 
+	    public List<DeptVO> selectDeptList(DeptVO searchVO);
+	
+	    public DeptIncludesEmpList selectDeptIncludesEmpList(DeptVO vo);
+	/**************************************************************************************/
+	
+	
+	
+===================================================================
+ Step 4. 테스트 케이스 작성
+ 
+ 1) EmpServiceTest 작성
+ 	
+ 	. /lab205-dataaccess-mybatis-tutor/src/test/java/egovframework/lab/dataaccess/service/EmpServiceTest.java
+	/**************************************************************************************/ 
+	@RunWith(SpringJUnit4ClassRunner.class)
+	@ContextConfiguration(locations = {"classpath*:META-INF/spring/context-*" })
+	@TransactionConfiguration(transactionManager = "txManager", defaultRollback = false)
+	@Transactional
+	public class EmpServiceTest {
+		
+		// TODO [Step 4-1] EmpServiceTest 작성
+	    
+	    @Resource(name = "dataSource")
+	    DataSource dataSource;
+	
+	    @Resource(name = "empService")
+	    EmpService empService;
+	    
+	    @Before
+	    public void onSetUp() throws Exception {
+	        // 편의상 각 테스트 메서드 수행 전에
+	    	// 외부의 스크립트 파일(sample_schema_hsql.sql)로 DB를 초기화하도록 설정
+	        SimpleJdbcTestUtils.executeSqlScript(new SimpleJdbcTemplate(dataSource), new ClassPathResource("META-INF/testdata/sample_schema_hsql.sql"), true);
+	    }
+	    
+	    /** 사원정보 생성 */
+	    public EmpVO makeVO() throws ParseException {
+	        EmpVO vo = new EmpVO();
+	
+	        // empNo는 Biz. 서비스 내에서 IDGeneration Service 에 의해 key를 생성하고 설정
+	        vo.setEmpName("홍길동");
+	        vo.setJob("개발자");
+	        vo.setMgr(new BigDecimal(7902));
+	        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+	        vo.setHireDate(sdf.parse("2009-07-09"));
+	        vo.setSal(new BigDecimal(1000));
+	        vo.setComm(new BigDecimal(0));
+	        vo.setDeptNo(new BigDecimal(20));
+	
+	        return vo;
+	    }
+	
+	    public void checkResult(EmpVO vo, EmpVO resultVO) {
+	        assertNotNull(resultVO);
+	        assertEquals(vo.getEmpNo(), resultVO.getEmpNo());
+	        assertEquals(vo.getEmpName(), resultVO.getEmpName());
+	        assertEquals(vo.getJob(), resultVO.getJob());
+	        assertEquals(vo.getMgr(), resultVO.getMgr());
+	        assertEquals(vo.getHireDate(), resultVO.getHireDate());
+	        assertEquals(vo.getSal(), resultVO.getSal());
+	        assertEquals(vo.getComm(), resultVO.getComm());
+	        assertEquals(vo.getDeptNo(), resultVO.getDeptNo());
+	    }
+	
+	    /** 사원정보 입력 */
+	    @Test
+	    public void testInsertEmp() throws Exception {
+	        EmpVO vo = makeVO();
+	
+	        // insert
+	        BigDecimal empNo = empService.insertEmp(vo);
+	        vo.setEmpNo(empNo);
+	
+	        // select
+	        EmpVO resultVO = empService.selectEmp(vo);
+	
+	        // check
+	        checkResult(vo, resultVO);
+	    }
+	
+	    /** 사원정보 수정 */
+	    @Test
+	    public void testUpdateEmp() throws Exception {
+	        EmpVO vo = makeVO();
+	
+	        // insert
+	        BigDecimal empNo = empService.insertEmp(vo);
+	        vo.setEmpNo(empNo);
+	
+	        // data change
+	        vo.setEmpName("홍길순");
+	        vo.setJob("설계자");
+	
+	        // update
+	        empService.updateEmp(vo);
+	
+	        // select
+	        EmpVO resultVO = empService.selectEmp(vo);
+	
+	        // check
+	        checkResult(vo, resultVO);
+	    }
+	
+	    /** 사원정보 삭제 */
+	    @Test
+	    public void testDeleteEmp() throws Exception {
+	        EmpVO vo = makeVO();
+	
+	        // insert
+	        BigDecimal empNo = empService.insertEmp(vo);
+	        vo.setEmpNo(empNo);
+	
+	        // delete
+	        empService.deleteEmp(vo);
+	
+	        // select
+	        try {
+	            @SuppressWarnings("unused")
+	            EmpVO resultVO = empService.selectEmp(vo);
+	            fail("EgovBizException 이 발생해야 합니다.");
+	        } catch (Exception e) {
+	            assertNotNull(e);
+	            // 여기서는 비지니스 단에서 명시적으로 exception 처리하였음
+	            // AbstractServiceImpl 을 extends 하고
+	            // processException("info.nodata.msg"); 과 같이 메서드 콜 형태로 처리
+	            assertTrue(e instanceof EgovBizException);
+	            assertEquals("info.nodata.msg", ((EgovBizException) e).getMessageKey());
+	            assertEquals("해당 데이터가 없습니다.", e.getMessage());
+	        }
+	    }
+	
+	    /** 사원정보 목록조회 */
+	    @Test
+	    public void testSelectEmpList() throws Exception {
+	        EmpVO vo = makeVO();
+	
+	        // insert
+	        BigDecimal empNo = empService.insertEmp(vo);
+	        vo.setEmpNo(empNo);
+	
+	        // 검색조건으로 empNo 설정
+	        EmpVO searchVO = new EmpVO();
+	        searchVO.setEmpNo(vo.getEmpNo());
+	
+	        // selectList
+	        List<EmpVO> resultList = empService.selectEmpList(searchVO);
+	
+	        // empNo 조건에 대한 결과는 1건일 것임
+	        assertNotNull(resultList);
+	        assertTrue(resultList.size() > 0);
+	        assertEquals(1, resultList.size());
+	        checkResult(vo, resultList.get(0));
+	
+	        // 검색조건으로 empName 설정 - '%' || #{empName} || '%'
+	        EmpVO searchVO2 = new EmpVO();
+	        searchVO2.setEmpName(""); // '%' || '' || '%' // --> '%%'
+	
+	        // selectList
+	        List<EmpVO> resultList2 = empService.selectEmpList(searchVO2);
+	
+	        // like 조건에 대한 결과는 1건 이상일 것임
+	        assertNotNull(resultList2);
+	        assertTrue(resultList2.size() > 0);
+	    }
+	
+	    /**
+	     *  하나의 사원과 해당 사원이 속한 부서정보를 조회
+	     * */
+	    @Test
+	    public void testSelectEmpWithDept() throws Exception {
+	        EmpVO vo = makeVO();
+	
+	        // insert
+	        BigDecimal empNo = empService.insertEmp(vo);
+	        vo.setEmpNo(empNo);
+	
+	        // select - empNo(8000)'s dept
+	        EmpWithDeptVO resultVO = empService.selectEmpWithDept(vo);
+	
+	        // check - empNo(8000)'s emp data
+	        checkResult(vo, resultVO);
+	        
+	        // check empNo(8000)'s dept data
+	        assertEquals(vo.getDeptNo(), resultVO.getDeptNo());
+	        assertEquals("RESEARCH", resultVO.getDeptName());
+	        assertEquals("DALLAS", resultVO.getLoc());
+	    }
+	    
+	    /**
+	     *  하나의 사원과 해당 사원이 속한 부서정보를 조회
+	     *  dept data를 담기 위한 Result Object는 Mapper XML 설정에서 <association>으로 표현
+	     * */
+	    @Test
+	    public void testSelectEmpIncludesDept() throws Exception {
+	        EmpVO vo = makeVO();
+	
+	        // insert
+	        BigDecimal empNo = empService.insertEmp(vo);
+	        vo.setEmpNo(empNo);
+	
+	        // select - empNo(8000)'s dept
+	        EmpIncludesDept resultVO = empService.selectEmpIncludesDept(vo);
+	
+	        // check - empNo(8000)'s emp data
+	        checkResult(vo, resultVO);
+	        
+	        // check empNo(8000)'s dept data
+	        assertEquals(vo.getDeptNo(), resultVO.getDeptVO().getDeptNo());
+	        assertEquals("RESEARCH", resultVO.getDeptVO().getDeptName());
+	        assertEquals("DALLAS", resultVO.getDeptVO().getLoc());
+	    }
+	
+	    @Test
+	    public void testSelectUsingCache() throws Exception {
+	        EmpVO vo = makeVO();
+	        
+	        // insert
+	        BigDecimal empNo = empService.insertEmp(vo);
+	        vo.setEmpNo(empNo); // 검색조건으로 empNo 활용
+	        
+	        // select - 구문결과를 캐시하는 select 첫실행
+	        EmpVO resultVO = empService.selectEmpUsingCache(vo);
+	        checkResult(vo, resultVO);
+	    	
+	        // select - 캐시설정이 안된 select 실행
+	        EmpVO resultVO2 = empService.selectEmp(vo);
+	        checkResult(vo, resultVO2);
+	        
+	        // resultVO와 resultVO2 비교 - 서로 다른 인스턴스 리턴
+	        assertNotSame(resultVO, resultVO2);
+	    	
+	        // select - 캐시설정이 된 select 재실행
+	        EmpVO resultVO3 = empService.selectEmpUsingCache(vo);
+	        checkResult(vo, resultVO3);
+	        
+	        // resultVO와 resultVO3 비교 - 캐시된 같은 인스턴스 리턴
+	        assertEquals(resultVO, resultVO3);
+	        assertSame(resultVO, resultVO3);
+	        
+	
+	        // insert
+	        EmpVO vo2 = makeVO();
+	        vo2.setEmpName("홍길돈");
+	        
+	        BigDecimal empNo2 = empService.insertEmp(vo2);
+	        vo2.setEmpNo(empNo2);
+	        
+	        // select - 홍길돈 생성확인
+	        EmpVO resultVO4 = empService.selectEmp(vo2);
+	        checkResult(vo2, resultVO4);
+	        
+	        // insert - flush cache test
+	        EmpVO resultVO5 = empService.selectEmpUsingCache(vo);
+	        checkResult(vo, resultVO5);
+	        
+	        // resultVO와 resultVO5 비교 - insert 호출로 cache가 flush되어 다른 인스턴스 리턴
+	        assertNotSame(resultVO, resultVO5);
+	
+	    }
+	/**************************************************************************************/  
+ 
+ 
+ 2) DeptServiceTest 작성
+ 
+	 . /lab205-dataaccess-mybatis-tutor/src/test/java/egovframework/lab/dataaccess/service/DeptServiceTest.java
+ 	/**************************************************************************************/  
+	@RunWith(SpringJUnit4ClassRunner.class)
+	@ContextConfiguration(locations = {"classpath*:META-INF/spring/context-*" })
+	@TransactionConfiguration(transactionManager = "txManager", defaultRollback = false)
+	@Transactional
+	public class DeptServiceTest {
+	
+		// TODO [Step 4-2] DeptServiceTest 작성
+
+
+	    @Resource(name = "dataSource")
+	    DataSource dataSource;
+	
+	    @Resource(name = "deptService")
+	    DeptService deptService;
+	
+	    @Before
+	    public void onSetUp() throws Exception {
+	        // 편의상 각 테스트 메서드 수행 전에
+	    	// 외부의 스크립트 파일(sample_schema_hsql.sql)로 DB를 초기화하도록 설정
+	        SimpleJdbcTestUtils.executeSqlScript(new SimpleJdbcTemplate(dataSource), new ClassPathResource("META-INF/testdata/sample_schema_hsql.sql"), true);
+	    }
+	
+	   /** 부서번호 Setting */
+	    public DeptVO makeVO() {
+	        return makeVO(90);
+	    }
+	
+	    /** 부서정보 생성 */
+	    public DeptVO makeVO(int deptNo) {
+	        DeptVO vo = new DeptVO();
+	        vo.setDeptNo(new BigDecimal(deptNo));
+	        vo.setDeptName("test 부서");
+	        vo.setLoc("test 위치");
+	        return vo;
+	    }
+	
+	    public void checkResult(DeptVO vo, DeptVO resultVO) {
+	        assertNotNull(resultVO);
+	        assertEquals(vo.getDeptNo(), resultVO.getDeptNo());
+	        assertEquals(vo.getDeptName(), resultVO.getDeptName());
+	        assertEquals(vo.getLoc(), resultVO.getLoc());
+	    }
+	
+	    /** 부서정보 입력 */
+	    @Test
+	    public void testInsertDept() throws Exception {
+	        DeptVO vo = makeVO();
+	
+	        // insert
+	        deptService.insertDept(vo);
+	
+	        // select
+	        DeptVO resultVO = deptService.selectDept(vo);
+	
+	        // check
+	        checkResult(vo, resultVO);
+	    }
+	
+	    /** 부서정보 수정 */
+	    @Test
+	    public void testUpdateDept() throws Exception {
+	        DeptVO vo = makeVO();
+	
+	        // insert
+	        deptService.insertDept(vo);
+	
+	        // data change
+	        vo.setDeptName("upd Dept");
+	        vo.setLoc("upd loc");
+	
+	        // update
+	        deptService.updateDept(vo);
+	
+	        // select
+	        DeptVO resultVO = deptService.selectDept(vo);
+	
+	        // check
+	        checkResult(vo, resultVO);
+	    }
+	
+	    /** 부서정보 삭제 */
+	    @Test
+	    public void testDeleteDept() throws Exception {
+	        DeptVO vo = makeVO();
+	
+	        // insert
+	        deptService.insertDept(vo);
+	
+	        // delete
+	        deptService.deleteDept(vo);
+	
+	        // select
+	        try {
+	            @SuppressWarnings("unused")
+	            DeptVO resultVO = deptService.selectDept(vo);
+	            fail("EgovBizException 이 발생해야 합니다.");
+	        } catch (Exception e) {
+	            assertNotNull(e);
+	            // 여기서는 비지니스 단에서 명시적으로 exception 처리하였음
+	            // AbstractServiceImpl 을 extends 하고
+	            // processException("info.nodata.msg"); 과 같이 메서드 콜 형태로 처리
+	            assertTrue(e instanceof EgovBizException);
+	            assertEquals("info.nodata.msg", ((EgovBizException) e).getMessageKey());
+	            assertEquals("해당 데이터가 없습니다.", e.getMessage());
+	        }
+	    }
+	
+	    /** 부서정보 목록조회 */
+	    @Test
+	    public void testSelectDeptList() throws Exception {
+	        DeptVO vo = makeVO();
+	
+	        // insert
+	        deptService.insertDept(vo);
+	
+	        // 검색조건으로 deptNo 설정
+	        DeptVO searchVO = new DeptVO();
+	        searchVO.setDeptNo(vo.getDeptNo());
+	
+	        // selectList
+	        List<DeptVO> resultList = deptService.selectDeptList(searchVO);
+	
+	        // deptNo 조건에 대한 결과는 1건일 것임
+	        assertNotNull(resultList);
+	        assertTrue(resultList.size() > 0);
+	        assertEquals(1, resultList.size());
+	        checkResult(vo, resultList.get(0));
+	
+	        // 검색조건으로 deptName 설정 - '%' || #{deptName} || '%'
+	        DeptVO searchVO2 = new DeptVO();
+	        searchVO2.setDeptName(""); // '%' || '' || '%' --> '%%'
+	
+	        // selectList
+	        List<DeptVO> resultList2 = deptService.selectDeptList(searchVO2);
+	
+	        // like 조건에 대한 결과는 1건 이상일 것임
+	        assertNotNull(resultList2);
+	        assertTrue(resultList2.size() > 0);
+	    }
+	    
+	    
+	    /**
+	     *  하나의 부서에 속한 사원 목록과 해당 부서정보 조회
+	     *  empList data를 담기 위한 Result Object는 Mapper XML 설정에서 <collection>으로 표현
+	     * */
+	    @Test
+	    public void testSelectDeptIncludesEmpList() throws Exception {
+	        DeptVO vo = new DeptVO();
+	        vo.setDeptNo(new BigDecimal(20));
+	
+	        // select - deptNo(20)'s empList
+	        DeptIncludesEmpList resultVO = deptService.selectDeptIncludesEmpList(vo);
+	
+	        // check - deptNo(20)'s dept data
+	        assertEquals(new BigDecimal(20), resultVO.getDeptNo());
+	        assertEquals("RESEARCH", resultVO.getDeptName());
+	        assertEquals("DALLAS", resultVO.getLoc());
+	        
+	        // check - deptNo(20)'s empList data
+	        // 초기화 데이터에 따라
+	        // EMP_NO EMP_NAME JOB  		MGR  HIRE_DATE		SAL  COMM   DEPT_NO 
+	        // ------------------------------------------------------------------------------------
+	        // 7369  		SMITH    CLERK   		7902 	1980-12-17 	800  	(null) 	20      
+	        // 7566  		JONES    MANAGER 	7839 	1981-04-02 	2975 	(null) 	20      
+	        // 7788   	SCOTT    ANALYST 	7566 	1987-04-19 	3000 	(null) 	20      
+	        // 7876   	ADAMS  CLERK   		7788 	1987-05-23 	1100 	(null) 	20      
+	        // 7902   	FORD     ANALYST 	7566 	1981-12-03 	3000 	(null) 	20
+	        
+	        assertEquals(5, resultVO.getEmpList().size());
+	        assertEquals(new BigDecimal(7369), resultVO.getEmpList().get(0).getEmpNo());
+	        assertEquals(new BigDecimal(7566), resultVO.getEmpList().get(1).getEmpNo());
+	        assertEquals(new BigDecimal(7788), resultVO.getEmpList().get(2).getEmpNo());
+	        assertEquals(new BigDecimal(7876), resultVO.getEmpList().get(3).getEmpNo());
+	        assertEquals(new BigDecimal(7902), resultVO.getEmpList().get(4).getEmpNo());
+	    }
+ 	/**************************************************************************************/ 

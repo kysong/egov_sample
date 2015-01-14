@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper   PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- TODO [Step 2-3-2] lab-dept.xml 작성 (Mapper Interface)-->
+<mapper namespace="egovframework.lab.dataaccess.service.impl.DeptMapper">
+
+	<resultMap id="deptResult" type="deptVO">
+		<id property="deptNo" column="DEPT_NO" />
+		<result property="deptName" column="DEPT_NAME" />
+		<result property="loc" column="LOC" />
+	</resultMap>
+ 
+	<insert id="insertDept" parameterType="deptVO">
+		<![CDATA[
+			insert into DEPT (DEPT_NO, DEPT_NAME, LOC)
+			values (#{deptNo}, #{deptName}, #{loc})
+		]]>
+	</insert>
+ 
+	<select id="selectDept" parameterType="deptVO" resultMap="deptResult">
+		<![CDATA[
+			select 	DEPT_NO, DEPT_NAME, LOC
+			from	DEPT
+			where	DEPT_NO = #{deptNo}
+		]]>
+	</select>
+ 
+	<update id="updateDept" parameterType="deptVO">
+	    <![CDATA[
+			update 	DEPT
+			set			DEPT_NAME = #{deptName}, LOC = #{loc}
+			where		DEPT_NO = #{deptNo}
+		]]>
+	</update>
+ 
+	<delete id="deleteDept" parameterType="deptVO">
+		<![CDATA[
+			delete from DEPT
+			where	DEPT_NO = #{deptNo}
+		]]>
+	</delete>
+ 
+	<select id="selectDeptList" parameterType="deptVO" resultMap="deptResult">
+		<![CDATA[
+			select	DEPT_NO, DEPT_NAME, LOC
+			from	DEPT
+			where  1 = 1
+		]]>
+	    <if test="deptNo != null">
+			AND DEPT_NO = #{deptNo}
+	    </if>
+	    <if test="deptName != null">
+			AND DEPT_NAME LIKE '%' || #{deptName} || '%'
+	    </if>
+	</select>
+	
+	<!--  Dept-EmpList 1:N relation
+			deptIncludesEmpList 클래스 타입에 List<EmpVO> empList 변수가 선언되어 있음
+	-->
+	<resultMap id="deptIncludesEmpListResult" type="deptIncludesEmpList" extends="deptResult">
+		<collection property="empList" resultMap="Emp.empResult" />
+	</resultMap>
+	
+	<select id="selectDeptIncludesEmpList" parameterType="deptVO" resultMap="deptIncludesEmpListResult">
+		<![CDATA[
+			select	A.DEPT_NO, DEPT_NAME, LOC, 
+						EMP_NO, EMP_NAME, JOB, MGR, HIRE_DATE, SAL, COMM, B.DEPT_NO
+			from	DEPT A, EMP B
+			where	A.DEPT_NO = B.DEPT_NO
+						and A.DEPT_NO = #{deptNo}
+			order by B.EMP_NO
+		]]>
+	</select>
+ 
+</mapper>

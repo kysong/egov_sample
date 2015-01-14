@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- TODO [Step 2-3-3] lab-emp-cache.xml 작성 확인 -->
+<mapper namespace="EmpCache">
+
+    <!-- select문 결과를 캐싱하고 insert/update/delete문 호출시 cache를 flush함 -->
+	<cache />
+	
+	<select id="selectEmpUsingCache" parameterType="empVO" resultMap="Emp.empResult">
+		<include refid="selectEmpReuse" />
+	</select>
+	
+	<!-- sql reuse test -->
+	<sql id="selectEmpReuse">
+		select EMP_NO, EMP_NAME, JOB, MGR, HIRE_DATE, SAL, COMM, DEPT_NO
+		from EMP
+		<include refid="empWhereEmpNo" />
+	</sql>
+
+	<sql id="empWhereEmpNo">
+		<where>
+			<if test="empNo != null">
+				EMP_NO = #{empNo}
+			</if>
+		</where>
+	</sql>
+
+</mapper>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN" "http://mybatis.org/dtd/mybatis-3-config.dtd">
+  
+<!-- TODO [Step 2-2] MyBatis Configuration File 작성  -->
+<configuration>
+		
+	<typeAliases>
+	    <typeAlias alias="deptVO" type="egovframework.lab.dataaccess.service.DeptVO" />
+	    <typeAlias alias="empVO" type="egovframework.lab.dataaccess.service.EmpVO" />
+	    
+		<typeAlias alias="empWithDeptVO" type="egovframework.lab.dataaccess.service.EmpWithDeptVO" />
+		<typeAlias alias="empIncludesDept" type="egovframework.lab.dataaccess.service.EmpIncludesDept" />
+		<typeAlias alias="deptIncludesEmpList" type="egovframework.lab.dataaccess.service.DeptIncludesEmpList" />
+	</typeAliases>
+	
+	<!-- MyBatis 연동을 위한 SqlSessionFactoryBean 정의 시 mapperLocations 속성으로 
+			한 번에 모든 Mapper XML File을 설정할 수 있다.  
+			(<property name="mapperLocations" value="classpath:**/lab-*.xml" /> 추가)
+			단, 아래 <mappers> 설정과 mapperLocations 설정 중 한가지만 선택해야한다.
+	-->
+	<mappers>
+		<mapper resource="META-INF/sqlmap/mappers/lab-dept.xml" />
+		<mapper resource="META-INF/sqlmap/mappers/lab-emp.xml" />
+		<mapper resource="META-INF/sqlmap/mappers/lab-emp-cache.xml" />
+	</mappers>
+
+</configuration>
