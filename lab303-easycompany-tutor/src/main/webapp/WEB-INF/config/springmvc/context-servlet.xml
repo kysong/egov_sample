@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.2.xsd
+				http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.2.xsd
+				http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-3.2.xsd">
+
+	<context:component-scan base-package="com.easycompany">
+		<context:include-filter type="annotation" expression="org.springframework.stereotype.Controller"/>
+		<context:exclude-filter type="annotation" expression="org.springframework.stereotype.Service"/>
+		<context:exclude-filter type="annotation" expression="org.springframework.stereotype.Repository"/>
+	</context:component-scan>
+	
+	<!--
+	Controller에서 화면(JSP) 입력값을 받기 위해서 일반적으로 Command(Form Class) 객체를 사용하지만,
+	Map 객체를 사용하는걸 선호할 수 있다.
+	org.springframework.web.method.support.HandlerMethodArgumentResolver의 구현클래스인 AnnotationCommandMapArgumentResolver은
+	HTTP request 객체값을 @CommandMap이 붙은  Map객체에 담아 Controller에서 사용도록 제공한다.
+	기존에 사용하던 CommandMapArgumentResolver은 deprecated되었으며 AnnotationCommandMapArgumentResolver이 이와 동일한 기능을 한다.
+	 -->
+	<bean class="egovframework.rte.ptl.mvc.bind.annotation.EgovRequestMappingHandlerAdapter">
+		<property name="customArgumentResolvers">
+			<list>
+				<bean class="egovframework.rte.ptl.mvc.bind.AnnotationCommandMapArgumentResolver" />
+			</list>
+		</property>
+	</bean>
+
+	<mvc:interceptors>
+		<mvc:interceptor>
+			<mvc:mapping path="/*Employee.do" />
+			<mvc:mapping path="/employeeList.do" />
+			<bean class="com.easycompany.cmm.interceptor.AuthenticInterceptor" />
+		</mvc:interceptor>
+	</mvc:interceptors>
+
+	<bean id="annotationMapper" class="org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping"
+		p:order="2" />
+
+	<bean id="urlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping"
+		p:order="3">
+		<property name="mappings">
+			<props>
+				<prop key="/login.do">urlFilenameViewController
+				</prop>
+				<prop key="/validator.do">urlFilenameViewController
+				</prop>
+			</props>
+		</property>
+	</bean>
+
+	<bean class="org.springframework.web.servlet.mvc.SimpleControllerHandlerAdapter" />
+
+	<bean id="urlFilenameViewController" class="org.springframework.web.servlet.mvc.UrlFilenameViewController" />
+
+	<bean class="org.springframework.web.servlet.view.InternalResourceViewResolver"
+		p:viewClass="org.springframework.web.servlet.view.JstlView"
+		p:prefix="/WEB-INF/jsp/"
+		p:suffix=".jsp" />
+
+
+	<bean class="org.springframework.web.servlet.handler.SimpleMappingExceptionResolver">
+		<property name="defaultErrorView" value="cmmn/genneralException" />
+		<property name="exceptionMappings">
+			<props>
+				<prop key="egovframework.rte.fdl.cmmn.exception.EgovBizException">cmmn/egovBizException</prop>
+				<prop key="org.springframework.dao.DataAccessException">cmmn/egovBizException</prop>
+				<prop key="org.springframework.transaction.TransactionException">cmmn/egovBizException</prop>
+			</props>
+		</property>
+	</bean>
+
+	<!-- Message Source-->
+	<bean id="messageSource" class="org.springframework.context.support.ResourceBundleMessageSource" 
+	p:basename="messages" />
+	
+	<!-- For Pagination Tag -->	 
+	<bean id="imageRenderer" class="com.easycompany.cmm.tag.ImagePaginationRenderer"/>
+	
+	<bean id="paginationManager" class="egovframework.rte.ptl.mvc.tags.ui.pagination.DefaultPaginationManager">
+		<property name="rendererType">
+			<map>
+				<entry key="image" value-ref="imageRenderer"/>
+			</map>
+		</property>
+	</bean>
+    	
+</beans>

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE sqlMap PUBLIC "-//ibatis.apache.org//DTD SQL Map 2.0//EN" "http://ibatis.apache.org/dtd/sql-map-2.dtd">
+
+<sqlMap namespace="Employee">
+
+	<select id="authenticate" parameterClass="com.easycompany.cmm.vo.Account"
+		resultClass="com.easycompany.cmm.vo.Account">
+		select employeeid,
+		name,
+		departmentid,
+		password
+		from employee
+		where employeeid = #employeeid#
+		and password = #password#
+	</select>
+
+	<select id="getEmployeeInfoById" parameterClass="string"
+		resultClass="com.easycompany.service.Employee">
+		select employeeid,
+		name,
+		age,
+		departmentid,
+		password,
+		email,
+		superdeptid
+		from employee a,
+		department b
+		where a.departmentid = b.deptid
+		and employeeid = #value#
+	</select>
+	<select id="getAllEmployees" parameterClass="java.util.Map"
+		resultClass="com.easycompany.service.Employee">
+		select employeeid,
+		name,
+		age,
+		departmentid,
+		password,
+		email
+		from employee
+		<dynamic prepend="WHERE">
+			<isNotEmpty prepend="and" property="searchEid">
+				employeeid =
+				#searchEid#
+			</isNotEmpty>
+			<isNotEmpty prepend="and" property="searchDid">
+				departmentid =
+				#searchDid#
+			</isNotEmpty>
+			<isNotEmpty prepend="and" property="searchName">
+				name like '%$searchName$%'
+			</isNotEmpty>
+		</dynamic>
+		order by cast(employeeid as integer)
+        limit #recordCountPerPage# OFFSET #firstIndex#
+	</select>
+	<select id="getEmployeeCount" parameterClass="java.util.Map" resultClass="int">
+		select count(*) empcount
+		from employee
+		<dynamic prepend="WHERE">
+			<isNotEmpty prepend="and" property="searchEid">
+				employeeid = #searchEid#
+			</isNotEmpty>
+			<isNotEmpty prepend="and" property="searchDid">
+				departmentid = #searchDid#
+			</isNotEmpty>
+			<isNotEmpty prepend="and" property="searchName">
+				name like '%' || #searchName# || '%'
+			</isNotEmpty>
+		</dynamic>
+	</select>
+	
+	<select id="getNameListForSuggest" resultClass="string">
+		select name
+		from employee
+		where name like '%' || #value# || '%'
+	</select>
+    
+    <update id="updateEmployee" parameterClass="com.easycompany.service.Employee">
+    	update employee
+    	set name = #name#,
+    		age = #age#,
+    		departmentid = #departmentid#,
+    		email = #email#,
+    		password = #password#
+    	where employeeid = #employeeid#
+    </update>
+    <delete id="deleteEmployee" parameterClass="com.easycompany.service.Employee">
+    	delete from employee where employeeid = #employeeid#
+    </delete>
+    
+	<!-- TODO [Step 4-5-03] Employee.xml 파일에 insertEmployee 에 해당하는 sql문을 만들어준다. 
+	     insertEmployee ID 로 정의된 insert 구문을 만들어준다. -->
+	<!-- SQL statement :: insert into employee ( employeeid, name, age, departmentid, email, password )values ( #employeeid#, #name#, #age#, #departmentid#, #email#, #password# ) -->
+    <insert id="insertEmployee" parameterClass="com.easycompany.service.Employee">
+        insert into employee ( employeeid, name, age, departmentid, email, password )
+        values ( #employeeid#, #name#, #age#, #departmentid#, #email#, #password# )
+    </insert>
+
+</sqlMap>
