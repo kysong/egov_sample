@@ -22,8 +22,6 @@ import com.easycompany.service.EmployeeService;
 import egovframework.rte.ptl.mvc.bind.annotation.CommandMap;
 import egovframework.rte.ptl.mvc.tags.ui.pagination.PaginationInfo;
 
-
-
 @Controller
 public class EmployeeController {
 
